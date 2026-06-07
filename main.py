@@ -30,7 +30,7 @@ import csv
 TOKEN = "8602767691:AAEOytdPqDMT7fvQLInAnu9Lv5MnQiB_XZ8"  
 ADMIN_ID = 5409553122
 # --- UPDATED API BASE URL AND KEY ---
-BASE_URL = "https://api.2oo9.cloud/MXS47FLFX0U/tnevs" 
+BASE_URL = "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api" 
 NEXA_API_KEY = "MRKVD1UFXWP" 
 BOT_NAME = "𝐑𝐌-𝐗𝐄𝐋 𝐁𝐎𝐓"
 
