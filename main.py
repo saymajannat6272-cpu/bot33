@@ -27,7 +27,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 import requests, json, time, uuid, re, csv, os, threading
 
 # --- CONFIGURATION ---
-TOKEN = "8602767691:AAEOytdPqDMT7fvQLInAnu9Lv5MnQiB_XZ8"  
+TOKEN = "8602767691:AAGolIPdf_ijYd9WJOvptnSweCkBFAseI_w"  
 ADMIN_ID = 5409553122
 BOT_NAME = "𝐑𝐌-𝐗𝐄𝐋 𝐁𝐎𝐓"
 
@@ -53,6 +53,15 @@ PANEL_LABELS = {
     "stex_sms":  "🔷 STEX SMS (2oo9)",
     "zenex":     "🌐 Zenex Network",
     "fastxotp":  "🚀 FastX OTP",
+}
+
+# ============================================
+# --- ALLOWED SERVICES FILTER ---
+# শুধু এই সার্ভিসগুলো দেখাবে (বাকি সব ফিল্টার হবে)
+# ============================================
+ALLOWED_APPS = {
+    "facebook", "whatsapp", "telegram", "imo",
+    "paypal", "tiktok", "discord", "indrive", "google"
 }
 
 def clean_base_url(url, panel):
@@ -124,6 +133,8 @@ http_session = requests.Session()
 # --- LIVE RANGE CACHE (auto GET NUMBER) ---
 # ============================================
 _live_ranges_cache = {"data": None, "updated_at": 0}
+_country_ranges_store = {}   # short_key -> range_string  (64-byte callback workaround)
+_user_country_sessions = {}  # chat_id -> {"app": str, "countries": {idx: {"label":str,"ranges":[]}}} 
 
 def get_clean_app_name(raw):
     """Normalize app/service name."""
@@ -137,22 +148,50 @@ def get_app_emoji_id_for_service(app_name):
     """Return emoji ID for a known app name."""
     lower = app_name.lower()
     mapping = {
-        "instagram":  "emj_instagram",
-        "facebook":   "emj_facebook",
-        "tiktok":     "emj_tiktok",
-        "telegram":   "emj_telegram",
-        "whatsapp":   "emj_whatsapp",
-        "twitter":    "emj_twitter",
-        "x":          "emj_twitter",
-        "discord":    "emj_discord",
-        "gmail":      "emj_gmail",
-        "google":     "emj_gmail",
-        "snapchat":   "emj_snapchat",
-        "viber":      "emj_viber",
-        "line":       "emj_line",
-        "wechat":     "emj_wechat",
-        "imo":        "emj_imo",
-        "binance":    "emj_binance",
+        "instagram":       "emj_instagram",
+        "facebook":        "emj_facebook",
+        "tiktok":          "emj_tiktok",
+        "telegram":        "emj_telegram",
+        "whatsapp business": "emj_whatsapp_business",
+        "whatsapp":        "emj_whatsapp",
+        "twitter":         "emj_twitter",
+        "discord":         "emj_discord",
+        "google":          "emj_google",
+        "apple":           "emj_apple",
+        "microsoft":       "emj_microsoft",
+        "teams":           "emj_teams",
+        "snapchat":        "emj_snapchat",
+        "uber":            "emj_uber",
+        "amazon prime":    "emj_amazon_prime",
+        "amazon":          "emj_amazon",
+        "viber":           "emj_viber",
+        "linkedin":        "emj_linkedin",
+        "line":            "emj_line",
+        "wechat":          "emj_wechat",
+        "imo":             "emj_imo",
+        "paypal":          "emj_paypal",
+        "indrive":         "emj_indrive",
+        "binance":         "emj_binance",
+        "bybit":           "emj_bybit",
+        "bkash":           "emj_bkash",
+        "rocket":          "emj_rocket",
+        "nagad":           "emj_nagad",
+        "reddit":          "emj_reddit",
+        "pinterest":       "emj_pinterest",
+        "twitch":          "emj_twitch",
+        "zoom":            "emj_zoom",
+        "signal":          "emj_signal",
+        "slack":           "emj_slack",
+        "skype":           "emj_skype",
+        "netflix":         "emj_netflix",
+        "spotify":         "emj_spotify",
+        "hoichoi":         "emj_hoichoi",
+        "daraz":           "emj_daraz",
+        "github":          "emj_github",
+        "canva":           "emj_canva",
+        "chatgpt":         "emj_chatgpt",
+        "melbet":          "emj_melbet",
+        "1xbet":           "emj_melbet",
     }
     for key, emoji_key in mapping.items():
         if key in lower:
@@ -251,15 +290,49 @@ active_sessions_lock = threading.Lock()
 # --- PREMIUM CUSTOM EMOJIS ---
 DEFAULT_CUSTOM_EMOJIS = {
     # --- Service App Emojis (Premium_App) ---
-    "emj_telegram":      "5337010556253543833",   # ✈️ Telegram
-    "emj_instagram":     "5334868205091459431",   # 📸 Instagram
-    "emj_facebook":      "5334807341109908955",   # 📘 Facebook
-    "emj_tiktok":        "5339213256001102461",   # 🎵 TikTok
-    "emj_whatsapp":      "5334759662677957452",   # 💬 WhatsApp
-    "emj_bkash":         "5348469219761626211",   # 🏦 bKash
-    "emj_rocket":        "5346042941196507141",   # 🚀 Rocket
-    "emj_binance":       "5348212415077064131",   # 💱 Binance
-    "emj_nagad":         "5352985330628730418",   # 🟠 Nagad
+    "emj_telegram":          "5337010556253543833",
+    "emj_instagram":         "5334868205091459431",
+    "emj_facebook":          "5334807341109908955",
+    "emj_tiktok":            "5339213256001102461",
+    "emj_whatsapp":          "5334759662677957452",
+    "emj_whatsapp_business": "5336814486701514414",
+    "emj_bkash":             "5348469219761626211",
+    "emj_rocket":            "5346042941196507141",
+    "emj_binance":           "5348212415077064131",
+    "emj_nagad":             "5352985330628730418",
+    "emj_discord":           "5116246243646898866",
+    "emj_imo":               "5337155807752524558",
+    "emj_paypal":            "5776103539872896061",
+    "emj_indrive":           "5298715455316303708",
+    "emj_google":            "5335010201005231986",
+    "emj_apple":             "5334637951894722661",
+    "emj_microsoft":         "5334880948259427772",
+    "emj_teams":             "5334590977837403844",
+    "emj_snapchat":          "5359441366554255082",
+    "emj_uber":              "5298715455316303708",
+    "emj_amazon":            "4995019580536524226",
+    "emj_viber":             "5463060437572528782",
+    "emj_linkedin":          "6224222994265279792",
+    "emj_line":              "5399818044866327279",
+    "emj_wechat":            "5782757599560602950",
+    "emj_twitter":           "5215726959056662534",
+    "emj_reddit":            "4992421103847604984",
+    "emj_pinterest":         "5346103513120258857",
+    "emj_twitch":            "5233333563306301418",
+    "emj_zoom":              "5881799193219043268",
+    "emj_signal":            "5293998404404272267",
+    "emj_slack":             "4994972469040251302",
+    "emj_skype":             "4992613535562334989",
+    "emj_netflix":           "6255738712664050133",
+    "emj_spotify":           "5411392711146095115",
+    "emj_amazon_prime":      "6111801057061374810",
+    "emj_hoichoi":           "6104822598493801746",
+    "emj_daraz":             "5336879280578138635",
+    "emj_github":            "5417836094098007862",
+    "emj_canva":             "5111661409008092227",
+    "emj_chatgpt":           "5296516998996445955",
+    "emj_bybit":             "5348372939479751825",
+    "emj_melbet":            "5337102391244263212",
 
     # --- UI / Action Emojis (from premium sources) ---
     "emj_support":       "5334763399299506604",   # 💬 Support
@@ -293,7 +366,7 @@ DEFAULT_CUSTOM_EMOJIS = {
     "emj_copy_link":     "5429483843541284898",   # 📋 Copy
 }
 
-# --- PREMIUM COUNTRY FLAGS ---
+# --- PREMIUM COUNTRY FLAGS (all 245 entries from Premium_Flag file) ---
 PREMIUM_FLAGS = {
     "united states": "5913463998522592692",
     "ukraine": "5911406692007941050",
@@ -335,7 +408,9 @@ PREMIUM_FLAGS = {
     "tajikistan": "5911287639809463107",
     "switzerland": "5913271227505448072",
     "sweden": "5911156510162949403",
+    "eswatini (swaziland)": "5913374525763883286",
     "swaziland": "5913374525763883286",
+    "eswatini": "5913374525763883286",
     "suriname": "5913275539652611719",
     "sudan": "5911387497799094470",
     "spain": "5911193287967904547",
@@ -359,6 +434,7 @@ PREMIUM_FLAGS = {
     "saint vincent and the grenadines": "5911318941531116255",
     "saint lucia": "5911243659344351824",
     "palestinian territory, occupied": "5913684768431541668",
+    "palestine": "5913684768431541668",
     "rwanda": "5911455229433352234",
     "romania": "5913460373570195273",
     "qatar": "5911260864983339619",
@@ -375,7 +451,6 @@ PREMIUM_FLAGS = {
     "norway": "5913617397574537046",
     "nigeria": "5911143844304393105",
     "niger": "5911270086278124251",
-    "new wildcard": "5913640044937089340",
     "new zealand": "5913640044937089340",
     "netherlands": "5913367645226275100",
     "nepal": "5913496520014958723",
@@ -401,11 +476,11 @@ PREMIUM_FLAGS = {
     "kenya": "5911154710571651231",
     "madagascar": "5913766918271012920",
     "republic of north macedonia": "5913394029210374721",
+    "north macedonia": "5913394029210374721",
     "macedonia": "5913394029210374721",
     "luxembourg": "5913390842344640293",
     "lithuania": "5911172315642597775",
     "liechtenstein": "5911166650580734660",
-    "libyan arab jamahiriya": "5911236989260140996",
     "libya": "5911236989260140996",
     "liberia": "5913324167272337727",
     "kiribati": "5911294443037660118",
@@ -501,7 +576,62 @@ PREMIUM_FLAGS = {
     "syrian arab republic": "5433910876786670092",
     "syria": "5433910876786670092",
     "myanmar": "5433666360003540231",
-    "nicaragua": "5334807849418003620"
+    "nicaragua": "5334807849418003620",
+    "south korea": "5913371673905598425",
+    "korea": "5913371673905598425",
+    "equatorial guinea": "5911306279967529251",
+    "greenland": "5292014752283774878",
+    "faroe islands": "5296469342039327674",
+    "côte d'ivoire (ivory coast)": "5222233374948602940",
+    "ivory coast": "5222233374948602940",
+    "côte d'ivoire": "5222233374948602940",
+    "brunei": "5911336409163109113",
+    "bulgaria": "5294329219965272288",
+    "burkina faso": "5913407764515786948",
+    "eritrea": "5433723401464198287",
+    "malawi": "5433968339154122439",
+    "mauritania": "5433859405898594234",
+    "nauru": "5434131139889478358",
+    "saudi arabia": "4985897134424328239",
+    "tonga": "5433640100573491806",
+    "tuvalu": "5433684690923961019",
+    "taiwan": "5366187256937726720",
+    "hong kong": "5292166459118606932",
+    "macau": "6323557758096377611",
+    "anguilla": "5780471598922337683",
+    "aruba": "5780471598922337683",
+    "british virgin islands": "5780471598922337683",
+    "cayman islands": "5780471598922337683",
+    "curacao": "5780471598922337683",
+    "falkland islands": "5780471598922337683",
+    "french guiana": "5780471598922337683",
+    "guadeloupe": "5780471598922337683",
+    "guam": "5780471598922337683",
+    "mayotte": "5780471598922337683",
+    "montserrat": "5780471598922337683",
+    "new caledonia": "5780471598922337683",
+    "niue": "5780471598922337683",
+    "norfolk island": "5780471598922337683",
+    "northern mariana islands": "5780471598922337683",
+    "pitcairn islands": "5780471598922337683",
+    "reunion": "5780471598922337683",
+    "saint helena": "5780471598922337683",
+    "tokelau": "5780471598922337683",
+    "turks and caicos islands": "5780471598922337683",
+    "us virgin islands": "5780471598922337683",
+    "wallis and futuna": "5780471598922337683",
+    "western sahara": "5780471598922337683",
+    "cook islands": "5780471598922337683",
+    "french polynesia": "5780471598922337683",
+    "gibraltar": "5780471598922337683",
+    "svalbard and jan mayen": "5780471598922337683",
+    "aland islands": "5780471598922337683",
+    "jersey": "5780471598922337683",
+    "guernsey": "5780471598922337683",
+    "isle of man": "5226538255029121667",
+    "saint pierre and miquelon": "5780471598922337683",
+    "sint maarten": "5461113820955027461",
+    "bonaire": "5780471598922337683",
 }
 
 # --- Telegram Latest Feature Check (CopyTextButton) ---
@@ -786,9 +916,19 @@ def get_country_flag(country_name):
         eid = PREMIUM_FLAGS[cn_lower]
         return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
     for k, v in PREMIUM_FLAGS.items():
-        if k in cn_lower:
+        if k in cn_lower or cn_lower in k:
             return f'<tg-emoji emoji-id="{v}">{fallback}</tg-emoji>'
     return get_emoji_tag("emj_country", fallback)
+
+def get_premium_flag_id(country_name):
+    """Return premium flag emoji ID (for button icon_custom_emoji_id) from country name."""
+    cn_lower = str(country_name).lower().strip()
+    if cn_lower in PREMIUM_FLAGS:
+        return PREMIUM_FLAGS[cn_lower]
+    for k, v in PREMIUM_FLAGS.items():
+        if k in cn_lower or cn_lower in k:
+            return v
+    return ""
 
 def get_unicode_flag(country_name):
     country_to_code = {
@@ -835,27 +975,73 @@ def get_unicode_flag(country_name):
     flag = "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in code.upper())
     return flag
 
+def get_country_info(number):
+    """Reference bot থেকে নেওয়া — range prefix দিয়ে (flag, country_name) return করে।"""
+    country_map = {
+        "2376": ("🇨🇲", "Cameroon"), "2250": ("🇨🇮", "Ivory Coast"), "2613": ("🇲🇬", "Madagascar"),
+        "4077": ("🇷🇴", "Romania"), "447": ("🇬🇧", "UK (Virtual)"), "1201": ("🇺🇸", "USA (Virtual)"),
+        "1302": ("🇺🇸", "USA (Virtual)"), "1415": ("🇺🇸", "USA (Virtual)"), "1212": ("🇺🇸", "USA (Virtual)"),
+        "1917": ("🇺🇸", "USA (Virtual)"), "1646": ("🇺🇸", "USA (Virtual)"), "1347": ("🇺🇸", "USA (Virtual)"),
+        "237": ("🇨🇲", "Cameroon"), "225": ("🇨🇮", "Ivory Coast"), "261": ("🇲🇬", "Madagascar"),
+        "20": ("🇪🇬", "Egypt"), "27": ("🇿🇦", "South Africa"), "234": ("🇳🇬", "Nigeria"),
+        "254": ("🇰🇪", "Kenya"), "233": ("🇬🇭", "Ghana"), "212": ("🇲🇦", "Morocco"),
+        "213": ("🇩🇿", "Algeria"), "216": ("🇹🇳", "Tunisia"), "218": ("🇱🇾", "Libya"),
+        "249": ("🇸🇩", "Sudan"), "251": ("🇪🇹", "Ethiopia"), "252": ("🇸🇴", "Somalia"),
+        "253": ("🇩🇯", "Djibouti"), "255": ("🇹🇿", "Tanzania"), "256": ("🇺🇬", "Uganda"),
+        "257": ("🇧🇮", "Burundi"), "258": ("🇲🇿", "Mozambique"), "260": ("🇿🇲", "Zambia"),
+        "263": ("🇿🇼", "Zimbabwe"), "264": ("🇳🇦", "Namibia"), "265": ("🇲🇼", "Malawi"),
+        "266": ("🇱🇸", "Lesotho"), "267": ("🇧🇼", "Botswana"), "268": ("🇸🇿", "Eswatini"),
+        "269": ("🇰🇲", "Comoros"), "220": ("🇬🇲", "Gambia"), "221": ("🇸🇳", "Senegal"),
+        "222": ("🇲🇷", "Mauritania"), "223": ("🇲🇱", "Mali"), "224": ("🇬🇳", "Guinea"),
+        "226": ("🇧🇫", "Burkina Faso"), "227": ("🇳🇪", "Niger"), "228": ("🇹🇬", "Togo"),
+        "229": ("🇧🇯", "Benin"), "230": ("🇲🇺", "Mauritius"), "231": ("🇱🇷", "Liberia"),
+        "232": ("🇸🇱", "Sierra Leone"), "235": ("🇹🇩", "Chad"), "236": ("🇨🇫", "Central African Republic"),
+        "238": ("🇨🇻", "Cape Verde"), "239": ("🇸🇹", "Sao Tome"), "240": ("🇬🇶", "Equatorial Guinea"),
+        "241": ("🇬🇦", "Gabon"), "242": ("🇨🇬", "Congo"), "243": ("🇨🇩", "DR Congo"),
+        "244": ("🇦🇴", "Angola"), "245": ("🇬🇼", "Guinea-Bissau"), "250": ("🇷🇼", "Rwanda"),
+        "291": ("🇪🇷", "Eritrea"), "40": ("🇷🇴", "Romania"), "44": ("🇬🇧", "United Kingdom"),
+        "33": ("🇫🇷", "France"), "49": ("🇩🇪", "Germany"), "39": ("🇮🇹", "Italy"),
+        "34": ("🇪🇸", "Spain"), "31": ("🇳🇱", "Netherlands"), "32": ("🇧🇪", "Belgium"),
+        "41": ("🇨🇭", "Switzerland"), "43": ("🇦🇹", "Austria"), "46": ("🇸🇪", "Sweden"),
+        "47": ("🇳🇴", "Norway"), "45": ("🇩🇰", "Denmark"), "358": ("🇫🇮", "Finland"),
+        "351": ("🇵🇹", "Portugal"), "353": ("🇮🇪", "Ireland"), "36": ("🇭🇺", "Hungary"),
+        "48": ("🇵🇱", "Poland"), "380": ("🇺🇦", "Ukraine"), "370": ("🇱🇹", "Lithuania"),
+        "371": ("🇱🇻", "Latvia"), "372": ("🇪🇪", "Estonia"), "373": ("🇲🇩", "Moldova"),
+        "374": ("🇦🇲", "Armenia"), "375": ("🇧🇾", "Belarus"), "381": ("🇷🇸", "Serbia"),
+        "382": ("🇲🇪", "Montenegro"), "385": ("🇭🇷", "Croatia"), "386": ("🇸🇮", "Slovenia"),
+        "387": ("🇧🇦", "Bosnia"), "389": ("🇲🇰", "North Macedonia"), "352": ("🇱🇺", "Luxembourg"),
+        "354": ("🇮🇸", "Iceland"), "355": ("🇦🇱", "Albania"), "356": ("🇲🇹", "Malta"),
+        "357": ("🇨🇾", "Cyprus"), "359": ("🇧🇬", "Bulgaria"), "421": ("🇸🇰", "Slovakia"),
+        "420": ("🇨🇿", "Czech Republic"),
+        "1": ("🇺🇸", "United States"), "7": ("🇷🇺", "Russia"),
+        "880": ("🇧🇩", "Bangladesh"), "86": ("🇨🇳", "China"), "81": ("🇯🇵", "Japan"),
+        "82": ("🇰🇷", "South Korea"), "84": ("🇻🇳", "Vietnam"), "66": ("🇹🇭", "Thailand"),
+        "62": ("🇮🇩", "Indonesia"), "60": ("🇲🇾", "Malaysia"), "65": ("🇸🇬", "Singapore"),
+        "63": ("🇵🇭", "Philippines"), "95": ("🇲🇲", "Myanmar"), "94": ("🇱🇰", "Sri Lanka"),
+        "977": ("🇳🇵", "Nepal"), "93": ("🇦🇫", "Afghanistan"), "98": ("🇮🇷", "Iran"),
+        "90": ("🇹🇷", "Turkey"), "964": ("🇮🇶", "Iraq"), "963": ("🇸🇾", "Syria"),
+        "961": ("🇱🇧", "Lebanon"), "962": ("🇯🇴", "Jordan"), "965": ("🇰🇼", "Kuwait"),
+        "966": ("🇸🇦", "Saudi Arabia"), "967": ("🇾🇪", "Yemen"), "968": ("🇴🇲", "Oman"),
+        "971": ("🇦🇪", "UAE"), "972": ("🇮🇱", "Israel"), "973": ("🇧🇭", "Bahrain"),
+        "974": ("🇶🇦", "Qatar"), "994": ("🇦🇿", "Azerbaijan"), "995": ("🇬🇪", "Georgia"),
+        "996": ("🇰🇬", "Kyrgyzstan"), "992": ("🇹🇯", "Tajikistan"), "993": ("🇹🇲", "Turkmenistan"),
+        "998": ("🇺🇿", "Uzbekistan"), "855": ("🇰🇭", "Cambodia"), "856": ("🇱🇦", "Laos"),
+        "976": ("🇲🇳", "Mongolia"), "91": ("🇮🇳", "India"), "92": ("🇵🇰", "Pakistan"),
+        "55": ("🇧🇷", "Brazil"), "52": ("🇲🇽", "Mexico"), "54": ("🇦🇷", "Argentina"),
+        "57": ("🇨🇴", "Colombia"), "51": ("🇵🇪", "Peru"), "58": ("🇻🇪", "Venezuela"),
+        "56": ("🇨🇱", "Chile"), "593": ("🇪🇨", "Ecuador"), "591": ("🇧🇴", "Bolivia"),
+        "595": ("🇵🇾", "Paraguay"), "598": ("🇺🇾", "Uruguay"), "502": ("🇬🇹", "Guatemala"),
+        "61": ("🇦🇺", "Australia"), "64": ("🇳🇿", "New Zealand"),
+    }
+    clean_num = str(number).replace('+', '').replace(' ', '').replace('-', '').strip()
+    for prefix in sorted(country_map.keys(), key=len, reverse=True):
+        if clean_num.startswith(prefix):
+            return country_map[prefix]
+    return ("🌍", "Unknown")
+
 def detect_country_by_prefix(range_val):
-    prefix = re.sub(r'\D', '', str(range_val))
-    if prefix.startswith("223"): return "Mali", get_country_flag("Mali")
-    if prefix.startswith("225"): return "Ivory Coast", get_country_flag("Ivory Coast")
-    if prefix.startswith("228"): return "Togo", get_country_flag("Togo")
-    if prefix.startswith("880") or prefix.startswith("88"): return "Bangladesh", get_country_flag("Bangladesh")
-    if prefix.startswith("91"): return "India", get_country_flag("India")
-    if prefix.startswith("92"): return "Pakistan", get_country_flag("Pakistan")
-    if prefix.startswith("7"): return "Russia", get_country_flag("Russia")
-    if prefix.startswith("380") or prefix.startswith("38"): return "Ukraine", get_country_flag("Ukraine")
-    if prefix.startswith("48"): return "Poland", get_country_flag("Poland")
-    if prefix.startswith("1"): return "United States", get_country_flag("United States")
-    if prefix.startswith("44"): return "United Kingdom", get_country_flag("United Kingdom")
-    if prefix.startswith("998"): return "Uzbekistan", get_country_flag("Uzbekistan")
-    if prefix.startswith("90"): return "Turkey", get_country_flag("Turkey")
-    if prefix.startswith("375") or prefix.startswith("37"): return "Belarus", get_country_flag("Belarus")
-    if prefix.startswith("55"): return "Brazil", get_country_flag("Brazil")
-    if prefix.startswith("84"): return "Vietnam", get_country_flag("Vietnam")
-    if prefix.startswith("62"): return "Indonesia", get_country_flag("Indonesia")
-    if prefix.startswith("63"): return "Philippines", get_country_flag("Philippines")
-    return "Custom Number", get_emoji_tag("emj_changing")
+    flag, name = get_country_info(range_val)
+    return name, flag
 
 def get_country_short_code(country_name):
     cn = str(country_name).lower().strip()
@@ -1072,10 +1258,12 @@ def _build_app_markup_and_send(chat_id, message_id):
     row = []
     for app_name, ranges in top_by_app.items():
         if not ranges: continue
-        best_range = ranges[0] if isinstance(ranges[0], str) else str(ranges[0])
+        # শুধু ALLOWED_APPS-এর সার্ভিস দেখাবে
+        app_lower = app_name.lower()
+        if not any(allowed in app_lower for allowed in ALLOWED_APPS):
+            continue
         safe_app = app_name[:20].replace("|", "")
-        safe_range = best_range[:30].replace("|", "")
-        btn = ibtn(app_name, callback_data=f"sel_app|{safe_app}|{safe_range}",
+        btn = ibtn(app_name, callback_data=f"view_app_ranges|{safe_app}",
                    style="primary", custom_emoji_id=get_app_emoji_id_for_service(app_name))
         row.append(btn)
         if len(row) == 2:
@@ -1083,12 +1271,103 @@ def _build_app_markup_and_send(chat_id, message_id):
             row = []
     if row:
         markup.row(*row)
-    markup.row(ibtn("Custom Number", callback_data="open_custom_rng", style="success",
-                    custom_emoji_id=get_emoji_id("emj_changing")))
 
     text = f'{get_emoji_tag("emj_number")} <b>SELECT APP TO GET NUMBER</b>\n━━━━━━━━━━━━━━━━━━━━━'
     try:
         msg = bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, parse_mode="HTML", reply_markup=markup)
+        save_active_menu(chat_id, msg)
+    except:
+        msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+        save_active_menu(chat_id, msg)
+
+
+def show_app_ranges(chat_id, app_name, message_id):
+    """Reference bot flow: Service → Live Country List → Number
+    Per-user session এ country→ranges store করে, sel_cty|{idx} callback ব্যবহার করে (always <15 bytes)."""
+    top_by_app, err = fetch_live_ranges_by_app()
+    if err or not top_by_app:
+        try:
+            bot.edit_message_text(
+                f'{get_emoji_tag("emj_cross")} <b>Could not load countries. Try again.</b>',
+                chat_id=chat_id, message_id=message_id, parse_mode="HTML"
+            )
+        except: pass
+        return
+
+    # App name case-insensitive match করে ranges নাও
+    raw_ranges = None
+    for key in top_by_app:
+        val = top_by_app[key]
+        if key.lower() == app_name.lower():
+            # voltx/stex/fastxotp: {"ranges":[...], ...} | zenex: [rng1, rng2, ...]
+            raw_ranges = val.get("ranges", []) if isinstance(val, dict) else val
+            break
+
+    if not raw_ranges:
+        try:
+            bot.edit_message_text(
+                f'{get_emoji_tag("emj_cross")} <b>No live countries found for {escape_html(app_name)}.</b>',
+                chat_id=chat_id, message_id=message_id, parse_mode="HTML"
+            )
+        except: pass
+        return
+
+    # Reference bot এর মতো: range → (flag, name), same country group করো
+    country_buttons_map = {}  # "🇧🇩 Bangladesh" -> [rng1, rng2, ...]
+    for rng in raw_ranges:
+        rng_str = str(rng).strip()
+        if not rng_str:
+            continue
+        flag, name = get_country_info(rng_str)
+        if name == "Unknown":
+            continue
+        country_key = f"{flag} {name}"
+        if country_key not in country_buttons_map:
+            country_buttons_map[country_key] = []
+        country_buttons_map[country_key].append(rng_str)
+
+    if not country_buttons_map:
+        try:
+            bot.edit_message_text(
+                f'{get_emoji_tag("emj_cross")} <b>No recognized countries for {escape_html(app_name)}.</b>',
+                chat_id=chat_id, message_id=message_id, parse_mode="HTML"
+            )
+        except: pass
+        return
+
+    # Per-user session এ store করো — numeric index key (reference bot এর মতো)
+    session = {"app": app_name, "countries": {}}
+    for idx, (country_key, rng_list) in enumerate(country_buttons_map.items(), start=1):
+        session["countries"][str(idx)] = {"label": country_key, "ranges": rng_list}
+    _user_country_sessions[str(chat_id)] = session
+
+    # Build buttons — callback: sel_cty|{idx}  (e.g. "sel_cty|3" = 9 bytes ✅)
+    markup = InlineKeyboardMarkup(row_width=2)
+    row = []
+    for idx_str, info in session["countries"].items():
+        label = info["label"]
+        parts = label.split(" ", 1)
+        country_name_part = parts[1] if len(parts) > 1 else label
+        flag_emoji_id = get_premium_flag_id(country_name_part)
+        # icon_custom_emoji_id তে premium flag, text এ শুধু country name (double flag এড়াতে)
+        btn = ibtn(country_name_part, callback_data=f"sel_cty|{idx_str}",
+                   style="danger", custom_emoji_id=flag_emoji_id if flag_emoji_id else get_emoji_id("emj_country"))
+        row.append(btn)
+        if len(row) == 2:
+            markup.row(*row)
+            row = []
+    if row:
+        markup.row(*row)
+    markup.row(ibtn("« Back", callback_data="get_number", style="primary",
+                    custom_emoji_id=get_emoji_id("emj_cross")))
+
+    cnt = len(country_buttons_map)
+    text = (f'🌎 <b>Select Country for {escape_html(app_name)}:</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━━\n'
+            f'<i>{cnt} live countries available</i>')
+    try:
+        msg = bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                    parse_mode="HTML", reply_markup=markup)
         save_active_menu(chat_id, msg)
     except:
         msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
@@ -1147,6 +1426,7 @@ def get_updated_number_markup(chat_id):
         
         numbers = session["numbers"]
         otp_status = session["otp_received"]
+        wa_verified = session.get("wa_verified", set())
         srv_id = session["service_info"].get("srv_id", "custom")
         cnt_id = session["service_info"].get("cnt_id", "custom")
         custom_range = session["service_info"].get("custom_range")
@@ -1157,8 +1437,9 @@ def get_updated_number_markup(chat_id):
         for num in numbers:
             is_done = otp_status.get(num, False)
             emoji_id = "5936067938955039275" if is_done else get_emoji_id("emj_copy_link")
+            wa_badge = " ✅ WA Active" if num in wa_verified else ""
             markup.add(
-                ibtn(f"= {num.lstrip('+')}", copy_text_str=num, custom_emoji_id=emoji_id)
+                ibtn(f"= {num.lstrip('+')}{wa_badge}", copy_text_str=num, custom_emoji_id=emoji_id)
             )
 
         otp_group_url = data.get("texts", {}).get("otp_group_link", "https://t.me/rmmtzotpgroup")
@@ -1190,6 +1471,48 @@ def get_updated_number_markup(chat_id):
 # ============================================
 # --- NUMBER FETCHING (ROUND-ROBIN RANGE) ---
 # ============================================
+# ============================================
+# --- WHATSAPP NUMBER CHECKER ---
+# ============================================
+def check_whatsapp_number(phone, timeout=0.8):
+    """
+    Fast WhatsApp number checker (within 1 second).
+    Returns (is_registered: bool, method: str)
+    Fail-open: returns True on timeout/error so users are never blocked.
+    """
+    try:
+        clean = re.sub(r'[^\d]', '', str(phone))
+        if not clean or len(clean) < 7:
+            return True, "skip"
+        # Check via wa.me page content
+        r = requests.get(
+            f"https://wa.me/{clean}",
+            timeout=timeout,
+            allow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        text = r.text.lower()
+        # These phrases indicate the number is NOT on WhatsApp
+        not_registered_signals = [
+            "invalid phone number",
+            "phone number is invalid",
+            "number does not exist",
+            "no longer exists",
+            "cannot find this phone"
+        ]
+        if any(p in text for p in not_registered_signals):
+            return False, "wa.me"
+        # "api_button_send_message" appears only for valid WA accounts
+        if "api_button_send_message" in text or "send message" in r.text.lower():
+            return True, "wa.me"
+        # Neutral / unknown response — fail-open
+        return True, "unknown"
+    except requests.exceptions.Timeout:
+        return True, "timeout"
+    except Exception:
+        return True, "error"
+
+
 def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_app_name=None):
     data = load_data()
     api_key = data.get("api_key", NEXA_API_KEY)
@@ -1226,6 +1549,7 @@ def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_
         msg_id = msg.message_id
     
     fetched_numbers = []
+    wa_verified_numbers = set()   # tracks WhatsApp-verified numbers
     last_error_msg = "All ranges are currently out of stock."
     
     # --- Round-Robin Dynamic API Range Selector ---
@@ -1291,7 +1615,20 @@ def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_
             if num:
                 fetched_num = f"+{str(num).replace('+', '')}"
                 if fetched_num not in fetched_numbers:
-                    fetched_numbers.append(fetched_num)
+                    # --- WhatsApp Active Check ---
+                    is_wa_service = any(
+                        wa in (auto_app_name or srv_name or "").lower()
+                        for wa in ("whatsapp", "wa ", "wapp")
+                    )
+                    if is_wa_service:
+                        wa_ok, _wa_method = check_whatsapp_number(fetched_num, timeout=0.8)
+                        if not wa_ok:
+                            last_error_msg = f"{fetched_num} not on WhatsApp — skipping"
+                            continue
+                        fetched_numbers.append(fetched_num)
+                        wa_verified_numbers.add(fetched_num)
+                    else:
+                        fetched_numbers.append(fetched_num)
         except Exception as e:
             last_error_msg = f"Network Error: {str(e)}"
 
@@ -1328,7 +1665,8 @@ def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_
             "msg_id": msg_id,
             "numbers": fetched_numbers,
             "otp_received": {num: False for num in fetched_numbers},
-            "service_info": service_info
+            "service_info": service_info,
+            "wa_verified": wa_verified_numbers
         }
         
     markup = get_updated_number_markup(chat_id)
@@ -1568,7 +1906,7 @@ def process_smart_wallet_withdrawal(message, wallet_type, amount):
         return
         
     req_id = "wd_" + str(uuid.uuid4())[:8]
-    data["balances"][uid_str] = round(bal - bal, 5) 
+    data["balances"][uid_str] = round(bal - amount, 5) 
     data.setdefault("pending_withdrawals", {})[req_id] = {
         "uid": uid_str, 
         "amount": bal, 
@@ -3334,13 +3672,42 @@ def handle_query(call):
             process_custom_rng_step_1(fake_msg)
         elif data_call == "retry_get_number":
             show_services(chat_id, message_id=msg_id)
-        elif data_call.startswith("sel_app|"):
+        elif data_call.startswith("view_app_ranges|"):
+            parts = data_call.split("|", 1)
+            if len(parts) == 2:
+                _, app_name = parts
+                show_app_ranges(chat_id, app_name, msg_id)
+
+        elif data_call.startswith("fetch_by_range|"):
             parts = data_call.split("|", 2)
             if len(parts) == 3:
-                _, app_name, auto_range = parts
+                _, app_name, key_or_range = parts
+                actual_range = _country_ranges_store.get(key_or_range, key_or_range)
                 active_polls[str(chat_id)] = False
                 fetch_real_numbers(chat_id, srv_id=None, cnt_id=None, msg_id=msg_id,
-                                   custom_range=auto_range, auto_app_name=app_name)
+                                   custom_range=actual_range, auto_app_name=app_name)
+
+        elif data_call.startswith("sel_cty|"):
+            # Reference bot flow: country index দিয়ে per-user session থেকে ranges নাও
+            idx_str = data_call.split("|", 1)[1]
+            session = _user_country_sessions.get(str(chat_id))
+            if not session:
+                try:
+                    bot.answer_callback_query(call.id, "⚠️ Session expired. Press GET NUMBER again.", show_alert=True)
+                except: pass
+                return
+            cty_info = session.get("countries", {}).get(idx_str)
+            if not cty_info:
+                try:
+                    bot.answer_callback_query(call.id, "⚠️ Country not found. Try again.", show_alert=True)
+                except: pass
+                return
+            app_name = session.get("app", "")
+            ranges_list = cty_info.get("ranges", [])
+            actual_range = ",".join(ranges_list)
+            active_polls[str(chat_id)] = False
+            fetch_real_numbers(chat_id, srv_id=None, cnt_id=None, msg_id=msg_id,
+                               custom_range=actual_range, auto_app_name=app_name)
         elif data_call == "close_inline":
             try: bot.delete_message(chat_id, msg_id)
             except: pass
@@ -3986,7 +4353,7 @@ def handle_query(call):
                     f.write(f"{u}\n")
                     
             with open(file_path, "rb") as f:
-                bot.send_document(chat_id, f, caption=f"<b>Total users logged in from opening:</b> <code>{escape_html(len(users))}</code>", parse_mode="HTML")
+                bot.send_document(chat_id, f, caption=f"<b>Total users logged in from opening:</b> <code>{len(users)}</code>", parse_mode="HTML")
                 
             try: os.remove(file_path)
             except: pass
