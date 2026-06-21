@@ -657,6 +657,16 @@ def _new_inline_dict(self):
         val = str(emoji_id).strip()
         if val:
             d['icon_custom_emoji_id'] = val
+
+    # CopyTextButton support — inject after creation to bypass constructor TypeError
+    copy_text_obj = getattr(self, '_copy_text_obj', None)
+    if copy_text_obj is not None:
+        # Remove any callback_data fallback, inject real copy_text
+        d.pop('callback_data', None)
+        try:
+            d['copy_text'] = copy_text_obj.to_dict() if hasattr(copy_text_obj, 'to_dict') else {'text': str(copy_text_obj)}
+        except Exception:
+            d['copy_text'] = {'text': str(copy_text_obj)}
             
     return d
 InlineKeyboardButton.to_dict = _new_inline_dict
@@ -682,38 +692,44 @@ KeyboardButton.to_dict = _new_kb_dict
 def escape_html(text):
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-# Safe, ultra-compatible copy text wrappers 
+# Safe, ultra-compatible copy text wrappers
 def ibtn(text, callback_data=None, url=None, style=None, copy_text_str=None, custom_emoji_id=None):
     kwargs = {'text': text}
     if callback_data: kwargs['callback_data'] = callback_data
     if url: kwargs['url'] = url
-    
+
+    # Copy text: always use a dummy callback_data first (required by constructor),
+    # then override via _copy_text_obj in to_dict patch.
     if copy_text_str:
-        if HAS_COPY_BTN:
-            try:
-                kwargs['copy_text'] = CopyTextButton(text=str(copy_text_str))
-            except Exception:
-                kwargs['callback_data'] = f"cp_{copy_text_str}"
-        else:
-            kwargs['callback_data'] = f"cp_{copy_text_str}"
-            
+        kwargs['callback_data'] = f"__copy__"
+
     try:
         b = InlineKeyboardButton(**kwargs)
     except TypeError:
-        if 'copy_text' in kwargs:
-            del kwargs['copy_text']
-            kwargs['callback_data'] = f"cp_{copy_text_str}"
+        kwargs.pop('callback_data', None)
+        kwargs['callback_data'] = "__copy__"
         b = InlineKeyboardButton(**kwargs)
-        
+
+    # Inject copy_text via attribute (serialized by patched to_dict)
+    if copy_text_str:
+        if HAS_COPY_BTN:
+            try:
+                b._copy_text_obj = CopyTextButton(text=str(copy_text_str))
+            except Exception:
+                b._copy_text_obj = type('CT', (), {'to_dict': lambda self: {'text': str(copy_text_str)}})()
+        else:
+            # Fallback: store raw string, to_dict will serialize as {'text': ...}
+            b._copy_text_obj = type('CT', (), {'to_dict': lambda self, s=copy_text_str: {'text': str(s)}})()
+
     if style:
         try: b.style = style
         except AttributeError: pass
-        
+
     emoji_val = str(custom_emoji_id).strip() if custom_emoji_id else None
     if emoji_val:
         try: b.icon_custom_emoji_id = emoji_val
         except AttributeError: pass
-        
+
     return b
 
 def rbtn(text, style=None, custom_emoji_id=None):
