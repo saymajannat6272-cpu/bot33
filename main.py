@@ -27,7 +27,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 import requests, json, time, uuid, re, csv, os, threading
 
 # --- CONFIGURATION ---
-TOKEN = "8602767691:AAGolIPdf_ijYd9WJOvptnSweCkBFAseI_w"  
+TOKEN = "8602767691:AAENJ1IhhomX0EopfYUxEscMP69bLkiRvk8"  
 ADMIN_ID = 5409553122
 BOT_NAME = "𝐑𝐌-𝐗𝐄𝐋 𝐁𝐎𝐓"
 
