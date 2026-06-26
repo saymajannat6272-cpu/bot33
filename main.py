@@ -40,9 +40,9 @@ PANEL_DEFAULTS = {
     "active_panel": "voltx_sms",
     "voltx_sms_api_key": "MRKVD1UFXWP",
     "voltx_sms_base_url": "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api",
-    "stex_sms_api_key": "MWF1Z0QG1DJ",
+    "stex_sms_api_key": "MHDQCONQMCV",
     "stex_sms_base_url": "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api",
-    "zenex_api_key": "ZNX_IQ52ED851U09ZAZL062U26GL",
+    "zenex_api_key": "ZNX_0L6V54ZNXOBN0I7LYN9IRV8M",
     "zenex_base_url": "https://api.zenexnetwork.com",
     "fastxotp_api_key": "MURAD_920E47039411AB1DD899DC2D",
     "fastxotp_base_url": "https://fastxotp.com",
@@ -1194,6 +1194,40 @@ def is_menu_button(text):
     ]
     return text.strip() in menu_buttons
 
+def send_otp_animation(chat_id):
+    """OTP আসার পরে animation দেখায়।"""
+    _e1 = '<tg-emoji emoji-id="5440621591387980068">⚡</tg-emoji>'
+    _e2 = '<tg-emoji emoji-id="5375338737028841420">⏳</tg-emoji>'
+    _e3 = '<tg-emoji emoji-id="5253938436980632246">💫</tg-emoji>'
+    _e4 = '<tg-emoji emoji-id="5253737930727384427">✅</tg-emoji>'
+    frames = [
+        f"{_e1}",
+        f"{_e1} {_e2}",
+        f"{_e2} {_e1} {_e2}",
+        f"{_e1} {_e2} {_e1}",
+        f"{_e2} {_e3} {_e2}",
+        f"{_e3} {_e1} {_e3}",
+        f"{_e1} {_e3} {_e2}",
+        f"{_e2} {_e1} {_e3}",
+        f"{_e3} {_e2} {_e1}",
+        f"{_e4} <b>OTP RECEIVED!</b> {_e4}",
+    ]
+    try:
+        anim_msg = bot.send_message(chat_id, frames[0], parse_mode="HTML")
+        for frame in frames[1:]:
+            time.sleep(0.1)
+            try:
+                bot.edit_message_text(frame, chat_id, anim_msg.message_id, parse_mode="HTML")
+            except:
+                pass
+        time.sleep(0.3)
+        try:
+            bot.delete_message(chat_id, anim_msg.message_id)
+        except:
+            pass
+    except:
+        pass
+
 def extract_otp(sms_text):
     # Search for hyphenated format first (e.g. 453-796)
     match = re.search(r'\b\d{3}[-\s]\d{3}\b', sms_text)
@@ -1214,18 +1248,15 @@ def get_main_menu(chat_id):
     btn_get_number = texts.get("btn_get_number", "GET NUMBER")
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        rbtn(btn_get_number, "primary", custom_emoji_id=get_emoji_id("emj_number")),
-        rbtn("Custom Number", "success", custom_emoji_id=get_emoji_id("emj_changing"))
+        rbtn(btn_get_number, "success", custom_emoji_id="5251514997388897766"),
+        rbtn("Custom Number", "danger", custom_emoji_id="5253737930727384427")
     )
     markup.add(
-        rbtn("PROFILE", "success", custom_emoji_id=get_emoji_id("emj_profile")),
-        rbtn("LEADERBOARD", "primary", custom_emoji_id=get_emoji_id("emj_successful"))
-    )
-    markup.add(
-        rbtn("Renge Group", "success", custom_emoji_id=get_emoji_id("emj_renge_group"))
+        rbtn("PROFILE", "primary", custom_emoji_id="5251671733630431622"),
+        rbtn("LEADERBOARD", "success", custom_emoji_id="5282843764451195532")
     )
     if is_admin(chat_id):
-        markup.add(rbtn("ADMIN PANEL", "primary", custom_emoji_id=get_emoji_id("emj_admin_panel")))
+        markup.add(rbtn("ADMIN PANEL", "danger", custom_emoji_id="5251691769652867056"))
     return markup
 
 def _build_app_markup_and_send(chat_id, message_id):
@@ -1472,15 +1503,21 @@ def get_updated_number_markup(chat_id):
             )
         else:
             callback_range = str(custom_range)[:40] if custom_range else "custom"
+            auto_app_name = session["service_info"].get("auto_app_name", "")
             # Row 1: Change Number + OTP Group on same line
             markup.row(
                 ibtn("Change Number", callback_data=f"chg_r|custom|{callback_range}", style="danger", custom_emoji_id=get_emoji_id("emj_changing")),
                 ibtn("OTP Group", url=otp_group_url, style="primary", custom_emoji_id=get_emoji_id("emj_otp_group"))
             )
-            # Row 2: Back to Country alone
-            markup.row(
-                ibtn("Back to Country", callback_data="back_to_services", style="success", custom_emoji_id=get_emoji_id("emj_country"))
-            )
+            # Row 2: Back to Country — if live API app, go back to that app's countries
+            if auto_app_name:
+                markup.row(
+                    ibtn("Back to Country", callback_data="back_to_app_cty", style="success", custom_emoji_id=get_emoji_id("emj_country"))
+                )
+            else:
+                markup.row(
+                    ibtn("Back to Country", callback_data="back_to_services", style="success", custom_emoji_id=get_emoji_id("emj_country"))
+                )
 
         return markup
 
@@ -1812,6 +1849,9 @@ def poll_otp_real(chat_id, phone_number, service_info, msg_id):
                     try:
                         bot.send_message(ADMIN_ID, f"🔔 <b>OTP Received!</b>\nUser: <code>{chat_id}</code>\nNumber: <code>{phone_number}</code>\nOTP: <code>{otp_code}</code>", parse_mode="HTML")
                     except: pass
+
+                # --- OTP Animation ---
+                send_otp_animation(chat_id)
 
                 # --- Send to user & forward groups ---
                 try:
@@ -3678,7 +3718,14 @@ def handle_query(call):
             else:
                 bot.answer_callback_query(call.id, "You must join all channels first!", show_alert=True)
 
+        elif data_call == "get_number": show_services(chat_id, msg_id)
         elif data_call == "back_to_services": show_services(chat_id, msg_id)
+        elif data_call == "back_to_app_cty":
+            session = _user_country_sessions.get(str(chat_id))
+            if session and session.get("app"):
+                show_app_ranges(chat_id, session["app"], msg_id)
+            else:
+                show_services(chat_id, msg_id)
         elif data_call == "show_profile_cb": show_profile(chat_id, msg_id)
         elif data_call == "open_custom_rng":
             try: bot.delete_message(chat_id, msg_id)
