@@ -40,9 +40,9 @@ PANEL_DEFAULTS = {
     "active_panel": "voltx_sms",
     "voltx_sms_api_key": "MRKVD1UFXWP",
     "voltx_sms_base_url": "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api",
-    "stex_sms_api_key": "MHDQCONQMCV",
+    "stex_sms_api_key": "MWF1Z0QG1DJ",
     "stex_sms_base_url": "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api",
-    "zenex_api_key": "ZNX_0L6V54ZNXOBN0I7LYN9IRV8M",
+    "zenex_api_key": "ZNX_IQ52ED851U09ZAZL062U26GL",
     "zenex_base_url": "https://api.zenexnetwork.com",
     "fastxotp_api_key": "MURAD_920E47039411AB1DD899DC2D",
     "fastxotp_base_url": "https://fastxotp.com",
@@ -1194,6 +1194,16 @@ def is_menu_button(text):
     ]
     return text.strip() in menu_buttons
 
+def send_number_fetch_animation(chat_id, msg_id, stop_event):
+    """নম্বর ফেচ হওয়ার সময় animation চলে background thread-এ।"""
+    _e = '<tg-emoji emoji-id="5253737930727384427">⭐</tg-emoji>'
+    while not stop_event.is_set():
+        try:
+            bot.edit_message_text(_e, chat_id=chat_id, message_id=msg_id, parse_mode="HTML")
+        except:
+            pass
+        stop_event.wait(0.1)
+
 def send_otp_animation(chat_id):
     """OTP আসার পরে animation দেখায়।"""
     _e1 = '<tg-emoji emoji-id="5440621591387980068">⚡</tg-emoji>'
@@ -1600,7 +1610,16 @@ def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_
     else:
         msg = bot.send_message(chat_id, f'{get_emoji_tag("emj_gen_number")} <b>Generating numbers... Please wait.</b>', parse_mode="HTML")
         msg_id = msg.message_id
-    
+
+    # --- Number Fetch Animation (background thread) ---
+    _stop_anim = threading.Event()
+    _anim_thread = threading.Thread(
+        target=send_number_fetch_animation,
+        args=(chat_id, msg_id, _stop_anim),
+        daemon=True
+    )
+    _anim_thread.start()
+
     fetched_numbers = []
     wa_verified_numbers = set()   # tracks WhatsApp-verified numbers
     last_error_msg = "All ranges are currently out of stock."
@@ -1684,6 +1703,10 @@ def fetch_real_numbers(chat_id, srv_id, cnt_id, msg_id, custom_range=None, auto_
                         fetched_numbers.append(fetched_num)
         except Exception as e:
             last_error_msg = f"Network Error: {str(e)}"
+
+    # --- Stop the fetch animation ---
+    _stop_anim.set()
+    _anim_thread.join(timeout=0.3)
 
     if not fetched_numbers:
         if auto_app_name:
